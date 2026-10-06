@@ -155,6 +155,27 @@ def scheduler():
         time.sleep(60)
 
 # ---------- 메시지 처리 ----------
+def run_async(chat, fn, ack):
+    """오래 걸리는 작업은 따로 돌리고, 바로 '처리 중' 답을 준다. 작업 중엔 '입력 중…' 표시 유지."""
+    busy = LOCK.locked()
+    send(chat, ack + (' (앞 질문을 처리하고 있어 조금 더 걸립니다)' if busy else ''))
+    def work():
+        done = threading.Event()
+        def typing():
+            while not done.is_set():
+                try: tg('sendChatAction', chat_id=chat, action='typing')
+                except Exception: pass
+                done.wait(4)
+        threading.Thread(target=typing, daemon=True).start()
+        with LOCK:
+            try: send(chat, fn())
+            except subprocess.TimeoutExpired:
+                send(chat, '시간이 너무 오래 걸려 멈췄습니다. 질문을 조금 좁혀서 다시 보내 주세요.')
+            except Exception as e:
+                log('task error', traceback.format_exc()[-800:]); send(chat, f'오류가 났습니다: {str(e)[:200]}')
+            finally: done.set()
+    threading.Thread(target=work, daemon=True).start()
+
 MEMBERS_F = os.path.join(HERE, 'members.json')
 
 def chat_name(msg):
@@ -198,18 +219,12 @@ def handle(msg):
     if cmd == '/report':
         send(chat, daily_text(load_board())); return
     if cmd == '/news':
-        tg('sendChatAction', chat_id=chat, action='typing')
-        send(chat, ask_claude(NEWS_PROMPT.replace('YYYY-MM-DD', now().strftime('%Y-%m-%d')))); return
+        run_async(chat, lambda: ask_claude(NEWS_PROMPT.replace('YYYY-MM-DD', now().strftime('%Y-%m-%d'))),
+                  '뉴스 찾는 중입니다. 검색 때문에 1~3분 걸립니다.'); return
     if cmd or not text: return
     if msg['chat'].get('type') in ('group', 'supergroup'):
         text = re.sub(r'@\w+bot\b', '', text, flags=re.I).strip()
-    tg('sendChatAction', chat_id=chat, action='typing')
-    def work():
-        with LOCK:
-            try: send(chat, answer(chat, text))
-            except Exception as e:
-                log('answer error', traceback.format_exc()[-800:]); send(chat, f'답변 중 오류가 났습니다: {str(e)[:200]}')
-    threading.Thread(target=work, daemon=True).start()
+    run_async(chat, lambda: answer(chat, text), '확인 중입니다. 보통 30초~2분 걸립니다.')
 
 def main():
     log('bot start')
