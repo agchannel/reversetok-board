@@ -1,0 +1,7 @@
+.env
+.venv/
+allowed.json
+state.json
+bot.log
+__pycache__/
+growth_prompt.txt
