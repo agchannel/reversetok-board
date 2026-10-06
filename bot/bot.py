@@ -21,7 +21,7 @@ def load_env():
 load_env()
 TOKEN = os.environ['TELEGRAM_TOKEN']
 PASSWORD = os.environ['BOARD_PASSWORD']
-BOARD_URL = os.environ.get('BOARD_URL', 'https://agchannel.github.io/reversetok-board/')
+BOARD_URL = os.environ.get('BOARD_URL', 'https://reversetok.netlify.app/')
 CLAUDE = os.environ.get('CLAUDE_BIN', 'claude')
 API = f'https://api.telegram.org/bot{TOKEN}/'
 KST = datetime.timezone(datetime.timedelta(hours=9))
