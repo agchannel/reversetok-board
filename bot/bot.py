@@ -155,23 +155,54 @@ def scheduler():
         time.sleep(60)
 
 # ---------- 메시지 처리 ----------
+MEMBERS_F = os.path.join(HERE, 'members.json')
+
+def chat_name(msg):
+    c = msg['chat']
+    if c.get('type') in ('group', 'supergroup'): return '그룹: ' + (c.get('title') or str(c['id']))
+    f = msg.get('from') or {}
+    return ' '.join(x for x in [f.get('first_name'), f.get('last_name')] if x) or f.get('username') or str(c['id'])
+
 def handle(msg):
     chat = msg['chat']['id']; text = (msg.get('text') or '').strip()
+    cmd, arg = '', text
+    if text.startswith('/'):
+        first, _, rest = text.partition(' ')
+        cmd, arg = first.split('@')[0].lower(), rest.strip()
     allowed = jload(ALLOWED_F, [])
-    if text.startswith('/start'):
-        if text[6:].strip() == PASSWORD:
+    members = jload(MEMBERS_F, {})
+    if cmd == '/start':
+        if arg == PASSWORD:
             if chat not in allowed: allowed.append(chat); jsave(ALLOWED_F, allowed)
-            send(chat, '등록됐습니다. 매일 08:30 업계 뉴스, 10:50 그로스 일일 보고를 보내드립니다.\n궁금한 건 그냥 물어보세요.\n/report 오늘 보고 다시 받기 · /news 뉴스 지금 받기')
+            members[str(chat)] = chat_name(msg); jsave(MEMBERS_F, members)
+            send(chat, '등록됐습니다. 평일 08:30 업계 뉴스, 10:50 그로스 일일 보고를 보내드립니다.\n궁금한 건 그냥 물어보세요.\n/report 오늘 보고 · /news 뉴스 지금 받기\n(비밀번호가 담긴 메시지는 삭제해 주세요)')
+            if allowed and allowed[0] != chat:
+                send(allowed[0], f'새 사용자 등록: {members[str(chat)]}')
         else:
             send(chat, '"/start 비밀번호" 형식으로 보내 주세요.')
         return
     if chat not in allowed: return
-    if text == '/report':
+    owner = allowed and allowed[0] == chat
+    if cmd == '/members':
+        lines = [f"{i+1}. {members.get(str(c), c)}{' (관리자)' if i == 0 else ''}" for i, c in enumerate(allowed)]
+        send(chat, '등록된 사용자\n' + '\n'.join(lines) + ('\n\n빼려면 /remove 번호' if owner else '')); return
+    if cmd == '/remove':
+        if not owner: send(chat, '관리자만 할 수 있습니다.'); return
+        try:
+            i = int(arg) - 1; assert 0 < i < len(allowed)
+        except Exception:
+            send(chat, '/members 에 나온 번호로 "/remove 2" 처럼 보내 주세요. (1번 관리자는 뺄 수 없습니다)'); return
+        gone = allowed.pop(i); jsave(ALLOWED_F, allowed)
+        name = members.pop(str(gone), gone); jsave(MEMBERS_F, members)
+        send(chat, f'뺐습니다: {name}'); return
+    if cmd == '/report':
         send(chat, daily_text(load_board())); return
-    if text == '/news':
+    if cmd == '/news':
         tg('sendChatAction', chat_id=chat, action='typing')
         send(chat, ask_claude(NEWS_PROMPT.replace('YYYY-MM-DD', now().strftime('%Y-%m-%d')))); return
-    if not text: return
+    if cmd or not text: return
+    if msg['chat'].get('type') in ('group', 'supergroup'):
+        text = re.sub(r'@\w+bot\b', '', text, flags=re.I).strip()
     tg('sendChatAction', chat_id=chat, action='typing')
     def work():
         with LOCK:

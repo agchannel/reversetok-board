@@ -5,3 +5,4 @@ state.json
 bot.log
 __pycache__/
 growth_prompt.txt
+members.json
