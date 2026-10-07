@@ -19,8 +19,13 @@ html = re.sub(r'<link rel="preconnect"[^>]*>\s*<link rel="stylesheet" href="http
 if not html.lstrip().lower().startswith('<!doctype'):
     html = ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             '<meta name="robots" content="noindex,nofollow"></head><body>' + html + '</body></html>')
-key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=ITER).derive(pw)
 iv = os.urandom(12)
+AUTO = ('<script>(function(){var V="'+iv.hex()+'";function chk(){if(document.hidden)return;'
+        'fetch(location.pathname+"?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.text()})'
+        '.then(function(t){var m=t.match(/"i": ?"([0-9a-f]+)"/);if(m&&m[1]!==V)location.reload()}).catch(function(){})}'
+        'setInterval(chk,180000);document.addEventListener("visibilitychange",chk)})();</script>')
+html = html.replace('</body>', AUTO + '</body>') if '</body>' in html else html + AUTO
+key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=ITER).derive(pw)
 ct = AESGCM(key).encrypt(iv, html.encode('utf-8'), None)
 payload = json.dumps({'s': salt.hex(), 'i': iv.hex(), 'n': ITER, 'c': base64.b64encode(ct).decode()})
 
@@ -65,8 +70,8 @@ function dec(raw){return crypto.subtle.importKey('raw',raw,'AES-GCM',true,['decr
 function get(){try{return localStorage.getItem(K)}catch(e){return null}}
 function put(v){try{localStorage.setItem(K,v)}catch(e){}}
 function del(){try{localStorage.removeItem(K)}catch(e){}}
-var saved=get();
-if(saved){dec(b64(saved)).then(show).catch(del)}
+var saved=get(),F=document.getElementById('f');
+if(saved){F.style.visibility='hidden';dec(b64(saved)).then(show).catch(function(){del();F.style.visibility=''})}
 document.getElementById('f').addEventListener('submit',function(ev){
   ev.preventDefault();var btn=document.getElementById('b'),er=document.getElementById('e');
   btn.disabled=true;btn.textContent='확인 중…';er.textContent='';
